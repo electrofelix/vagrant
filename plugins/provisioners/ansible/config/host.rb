@@ -7,6 +7,7 @@ module VagrantPlugins
 
         attr_accessor :ask_sudo_pass
         attr_accessor :ask_vault_pass
+        attr_accessor :autogen_inventory_retries
         attr_accessor :force_remote_user
         attr_accessor :host_key_checking
         attr_accessor :raw_ssh_args
@@ -18,6 +19,7 @@ module VagrantPlugins
           @ask_vault_pass      = false
           @force_remote_user   = true
           @host_key_checking   = false
+          @autogen_inventory_retries = UNSET_VALUE
           @raw_ssh_args        = UNSET_VALUE
         end
 
@@ -28,11 +30,19 @@ module VagrantPlugins
           @ask_vault_pass      = false if @ask_vault_pass    != true
           @force_remote_user   = true  if @force_remote_user != false
           @host_key_checking   = false if @host_key_checking != true
+          @autogen_inventory_retries = 1  if @autogen_inventory_retries == UNSET_VALUE
           @raw_ssh_args        = nil   if @raw_ssh_args      == UNSET_VALUE
         end
 
         def validate(machine)
           super
+
+          if !@autogen_inventory_retries.is_a? Integer
+            @errors << I18n.t(
+              "vagrant.provisioners.ansible.errors.autogen_inventory_retries_invalid",
+              type:  @autogen_inventory_retries.class.to_s,
+              value: @autogen_inventory_retries.to_s)
+          end
 
           { "ansible remote provisioner" => @errors }
         end

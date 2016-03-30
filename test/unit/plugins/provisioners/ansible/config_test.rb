@@ -23,6 +23,7 @@ describe VagrantPlugins::Ansible::Config::Host do
 
     supported_options = %w( ask_sudo_pass
                             ask_vault_pass
+                            autogen_inventory_retries
                             extra_vars
                             force_remote_user
                             galaxy_command
@@ -68,6 +69,7 @@ describe VagrantPlugins::Ansible::Config::Host do
     expect(subject.host_key_checking).to be_false
     expect(subject.raw_arguments).to be_nil
     expect(subject.raw_ssh_args).to be_nil
+    expect(subject.autogen_inventory_retries).to eq(1)
   end
 
   describe "force_remote_user option" do
@@ -204,6 +206,7 @@ describe VagrantPlugins::Ansible::Config::Host do
       subject.playbook = non_existing_file
       subject.inventory_path = non_existing_file
       subject.extra_vars = non_existing_file
+      subject.autogen_inventory_retries = "not an integer"
       subject.finalize!
 
       result = subject.validate(machine)
@@ -217,6 +220,9 @@ describe VagrantPlugins::Ansible::Config::Host do
       expect(result["ansible remote provisioner"]).to include(
         I18n.t("vagrant.provisioners.ansible.errors.inventory_path_invalid",
                path: non_existing_file, system: "host"))
+      expect(result["ansible remote provisioner"]).to include(
+        I18n.t("vagrant.provisioners.ansible.errors.autogen_inventory_retries_invalid",
+               type: "String", value: "not an integer"))
     end
 
   end

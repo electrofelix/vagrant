@@ -2127,6 +2127,8 @@ en:
             `galaxy_role_file` does not exist on the %{system}: %{path}
           inventory_path_invalid: |-
             `inventory_path` does not exist on the %{system}: %{path}
+          autogen_inventory_retries_invalid: |-
+            `autogen_inventory_retries` for the Ansible proviersioner must be an integer. Received: %{value} (as %{type})
           no_playbook: |-
             `playbook` file path must be set.
           playbook_path_invalid: |-

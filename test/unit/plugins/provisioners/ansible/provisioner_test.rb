@@ -60,6 +60,15 @@ VF
     machine.env.stub(ui: stubbed_ui)
 
     config.playbook = 'playbook.yml'
+
+    # not interested in waiting a period of time to retry for tests
+    class << subject
+      alias_method :original_retryable, :retryable
+      def retryable(opts=nil, &block)
+        opts.delete(:sleep) if opts
+        original_retryable(opts, &block)
+      end
+    end
   end
 
   #
@@ -188,6 +197,21 @@ VF
     end
   end
 
+  def self.it_should_retry_communicating_with_machine_not_responding
+    describe 'when other machine is not reachable' do
+      it "retries generating inventory" do
+        expect(Vagrant::Util::Subprocess).to receive(:execute).with { |*args|
+          inventory_content = File.read(generated_inventory_file)
+          expect(inventory_content).to include("# MISSING: 'machine2' machine")
+        }
+        logger = subject.instance_variable_get(:@logger)
+        expect(logger).to receive(:info).
+          with(/Machine 'machine2 \(dummy\)' not yet responding to (ssh|winrm)./).
+          exactly(config.autogen_inventory_retries).times
+      end
+    end
+  end
+
   describe "#provision" do
 
     before do
@@ -215,6 +239,7 @@ VF
     describe "with default options" do
       it_should_set_arguments_and_environment_variables
       it_should_create_and_use_generated_inventory
+      it_should_retry_communicating_with_machine_not_responding
 
       it "does not add any group section to the generated inventory" do
         expect(Vagrant::Util::Subprocess).to receive(:execute).with { |*args|
@@ -428,6 +453,14 @@ VF
       it_should_set_arguments_and_environment_variables
     end
 
+    describe "with autogen_inventory_retries option" do
+      before do
+        config.autogen_inventory_retries = 3
+      end
+
+      it_should_retry_communicating_with_machine_not_responding
+    end
+
     context "with force_remote_user option disabled" do
       before do
         config.force_remote_user = false
@@ -454,11 +487,11 @@ Vagrant.configure("2") do |config|
   config.winrm.username = 'winner'
   config.winrm.password = 'winword'
   config.winrm.transport = :ssl
+  config.vm.box = "winbox"
+  config.vm.communicator = :winrm
 
-  config.vm.define :machine1 do |machine|
-    machine.vm.box = "winbox"
-    machine.vm.communicator = :winrm
-  end
+  config.vm.define :machine1
+  config.vm.define :machine2
 end
 VF
         env.create_vagrant_env
@@ -466,7 +499,12 @@ VF
 
       let(:machine) { iso_winrm_env.machine(iso_winrm_env.machine_names[0], :dummy) }
 
+      before do
+        machine.env.stub(active_machines: [[iso_winrm_env.machine_names[0], :dummy], [iso_winrm_env.machine_names[1], :dummy]])
+      end
+
       it_should_set_arguments_and_environment_variables
+      it_should_retry_communicating_with_machine_not_responding
 
       it "generates an inventory with winrm connection settings" do
 
@@ -492,6 +530,14 @@ VF
             expect(args).to include("--user=testuser")
           }
         end
+      end
+
+      describe "with autogen_inventory_retries option" do
+        before do
+          config.autogen_inventory_retries = 3
+        end
+
+        it_should_retry_communicating_with_machine_not_responding
       end
     end
 

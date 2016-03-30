@@ -1,4 +1,7 @@
+require "tempfile"
 require "thread"
+require 'vagrant/util/retryable'
+
 
 require_relative "base"
 
@@ -6,6 +9,7 @@ module VagrantPlugins
   module Ansible
     module Provisioner
       class Host < Base
+        include Vagrant::Util::Retryable
 
         @@lock = Mutex.new
 
@@ -157,24 +161,44 @@ module VagrantPlugins
 
               # Call only once the SSH and WinRM info computation
               # Note that machines configured with WinRM communicator, also have a "partial" ssh_info.
-              m_ssh_info = m.ssh_info
               host_vars = get_inventory_host_vars_string(m.name)
               if m.config.vm.communicator == :winrm
-                m_winrm_net_info = CommunicatorWinRM::Helper.winrm_info(m) # can raise a WinRMNotReady exception...
-                machines += get_inventory_winrm_machine(m, m_winrm_net_info)
-                machines.sub!(/\n$/, " #{host_vars}\n") if host_vars
-                @inventory_machines[m.name] = m
-              elsif !m_ssh_info.nil?
-                machines += get_inventory_ssh_machine(m, m_ssh_info)
-                machines.sub!(/\n$/, " #{host_vars}\n") if host_vars
-                @inventory_machines[m.name] = m
+                retryable(on: CommunicatorWinRM::Errors::WinRMNotReady,
+                          tries: config.autogen_inventory_retries, sleep: 2) do
+                  begin
+                    m_winrm_net_info = CommunicatorWinRM::Helper.winrm_info(m) # can raise a WinRMNotReady exception...
+                  rescue CommunicatorWinRM::Errors::WinRMNotReady
+                    @logger.info("Machine '#{am[0]} (#{am[1]})' not yet responding to winrm.")
+                    raise
+                  end
+                  machines += get_inventory_winrm_machine(m, m_winrm_net_info)
+                  machines.sub!(/\n$/, " #{host_vars}\n") if host_vars
+                  @inventory_machines[m.name] = m
+                end
               else
-                @logger.error("Auto-generated inventory: Impossible to get SSH information for machine '#{m.name} (#{m.provider_name})'. This machine should be recreated.")
-                # Let a note about this missing machine
-                machines += "# MISSING: '#{m.name}' machine was probably removed without using Vagrant. This machine should be recreated.\n"
+                retryable(on: Vagrant::Errors::SSHNotReady,
+                          tries: config.autogen_inventory_retries, sleep: 2) do
+                  m_ssh_info = m.ssh_info
+                  if !m_ssh_info.nil?
+                    machines += get_inventory_ssh_machine(m, m_ssh_info)
+                    machines.sub!(/\n$/, " #{host_vars}\n") if host_vars
+                    @inventory_machines[m.name] = m
+                  else
+                    @logger.info("Machine '#{am[0]} (#{am[1]})' not yet responding to ssh.")
+                    raise Vagrant::Errors::SSHNotReady
+                  end
+                end
               end
-            rescue Vagrant::Errors::MachineNotFound, CommunicatorWinRM::Errors::WinRMNotReady => e
-              @logger.info("Auto-generated inventory: Skip machine '#{am[0]} (#{am[1]})', which is not configured for this Vagrant environment.")
+            rescue Vagrant::Errors::SSHNotReady, CommunicatorWinRM::Errors::WinRMNotReady => e
+              @logger.error("Auto-generated inventory: Impossible to get connection " <<
+                            "information for machine '#{m.name} (#{m.provider_name})'. " <<
+                            "This machine should be recreated.")
+              # Let a note about this missing machine
+              machines += "# MISSING: '#{m.name}' machine was probably removed without using " <<
+                "Vagrant. This machine should be recreated.\n"
+            rescue Vagrant::Errors::MachineNotFound => e
+              @logger.info("Auto-generated inventory: Skip machine '#{am[0]} (#{am[1]})', " <<
+                "which is not configured for this Vagrant environment.")
             end
           end
 

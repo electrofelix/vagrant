@@ -61,6 +61,10 @@ This section lists the specific options for the Ansible (remote) provisioner. In
 
   The default value is `false`.
 
+- `autogen_inventory_retries` (integer) - require Vagrant to retry a number of times to get the necessary communication details from machines to auto generate the inventory file. May be needed in some multi-machine configurations where some providers may not have connections to all available guests before the first machine is ready to be provisioned by Ansible.
+
+  The default value is `1`
+
 - `force_remote_user` (boolean) - require Vagrant to set the `ansible_ssh_user` setting in the generated inventory, or as an extra variable when a static inventory is used. All the Ansible `remote_user` parameters will then be overridden by the value of `config.ssh.username` of the [Vagrant SSH Settings](/docs/vagrantfile/ssh_settings.html).
 
   If this option is set to `false` Vagrant will set the Vagrant SSH username as a default Ansible remote user, but `remote_user` parameters of your Ansible plays or tasks will still be taken into account and thus override the Vagrant configuration.
